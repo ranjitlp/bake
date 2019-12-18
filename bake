@@ -1,0 +1,56 @@
+#!/usr/bin/python
+
+import sys
+import os
+import re
+from os import sys, path
+
+class baker:
+   def __init__(self) :
+      self.dummy = 0
+      self.filedepend = dict()
+      self.taskdepend = dict()
+   def parse_cmd(self,line) :
+      cmd = re.sub("\[.*","",line)
+      print cmd
+
+      args = re.sub(".*?\[","",line)
+      args = re.sub("\]","",args)
+      argdict = {}
+      for arg in args.split(","):
+          pair = re.match("(\S+)\=(.*)",arg)
+          if pair :
+             argdict[pair.group(1)] = pair.group(2)
+          else :
+             argdict[arg] = 1
+      print (argdict)
+   global fdf   
+   def fdf(outfile,inpattern,cmd) :
+      infiles = []
+      for patterns in inpattern:
+         infiles += glob.glob(inpattern)
+      print(infiles) 
+
+   def tdf(outtask,infile,cmd) : 
+      infiles = []
+
+
+cmdline_args_length = len(sys.argv)
+
+if (cmdline_args_length == 1) :
+    target = "all"
+elif (cmdline_args_length == 2) :
+    target = sys.argv[1]
+
+fdf
+
+print (target)
+bake = baker()
+bake.parse_cmd(target)
+
+bakefile = "Bakefile.py"
+if os.path.exists(bakefile) and os.path.getsize(bakefile) > 0:
+   sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
+   import Bakefile 
+else :
+   print ("Missing Bakefile or Empty Bakefile")
