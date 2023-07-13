@@ -3,17 +3,33 @@
 import sys
 import os
 import re
+import glob
+import time
 from os import sys, path
+from tkinter.messagebox import NO
+from threading import Thread
+import subprocess
 
 class baker:
    def __init__(self) :
       self.dummy = 0
-      self.filedepend = dict()
-      self.taskdepend = dict()
+      self.targets = dict()
+      self.sourceuisites = dict()
+      self.sources = dict()
+      self.targets = dict()
+      self.all = dict()
+      self.carefree = dict()
+      self.dests = dict()
+      self.dest_t = dict()
+      self.depend = dict()
+      self.cmd = dict()
+      self.depend_done = dict()
+      self.done = dict()
+      self.fail = dict()
+      self.depend_fail = dict()
+      
    def parse_cmd(self,line) :
       cmd = re.sub("\[.*","",line)
-      print cmd
-
       args = re.sub(".*?\[","",line)
       args = re.sub("\]","",args)
       argdict = {}
@@ -24,15 +40,156 @@ class baker:
           else :
              argdict[arg] = 1
       print (argdict)
-   global fdf   
-   def fdf(outfile,inpattern,cmd) :
-      infiles = []
-      for patterns in inpattern:
-         infiles += glob.glob(inpattern)
-      print(infiles) 
 
-   def tdf(outtask,infile,cmd) : 
-      infiles = []
+   
+   # Basic Dependency Proc that adds dependencies to the dependency tree 
+   def fdf(self,target_depends_relation,dest_source_relation,cmd,**kwargs) :
+          
+      (target,depends) = re.split("\:", target_depends_relation)
+      (dest,sources) = re.split("\:", dest_source_relation)
+      task = kwargs.get("task",None)
+      t = kwargs.get("t",None)
+      print (target)
+      infiles = ""
+      if (t==1) or (task==1)  or (task==True) or (t==True):
+        task = 1
+      else :
+         task = 0
+         
+      sourcesexpand = ""
+      
+      for pattern in sources.split("\,"):
+         source = str(glob.glob(pattern))
+         sourcesexpand += source
+         self.add_source(dest,source)
+         
+      for depend in depends.split("\,"):
+         self.depend[target] = depend
+         
+      self.dest_t[target] = dest  
+      self.cmd[target] = cmd
+      
+   def add_source(self,dest,source) :
+       if not dest in self.sources :
+           self.sources[dest] = []
+       if not source in self.dests :
+           self.dests[source] = []            
+       self.sources[dest].append(source)
+       self.dests[source] = dest
+       
+   def find_lonely_parents(self) :
+      for pot_target in self.targets :
+         if (not (pot_target in self.sources)) :
+            self.all[pot_target] = 1
+            
+   def find_lonely_children(self) :
+      for pot_source in self.sources :
+         if (not (pot_source in self.targets)) :
+            self.carefree[pot_source] = 1
+            
+  
+   
+   def check_timestamp(self,target, source) :
+   
+      if not os.path.exists(target) :	
+          return "FAIL"
+      else :	
+	      TargetModTimeSinceEpoc = os.path.getmtime(target)
+	      SourceModTimeSinceEpoc = os.path.getmtime(source)
+	      if (TargetModTimeSinceEpoc < SourceModTimeSinceEpoc) :
+	             return "FAIL"
+	      else :
+	             return "PASS"
+	  
+	     
+      
+   def check_sources_of_dest(self,target) :
+       dest = self.dest_t[target]
+       status = "PASS"
+       for source in self.sources[dest] :
+           x = self.check_timestamp(dest,source)
+           if (x == "FAIL") :
+               return "FAIL"
+       if (status == "PASS") :
+           return "PASS"
+           
+       
+   def run_tree(self) :
+       self.jobs_to_run = []
+       self.all_targets = list(self.dest_t.keys())
+       while self.all_targets :
+            target = self.all_targets.pop()
+            print ("Target1 is"+target)
+            self.depend_done[target] = 1
+            for depend in self.depend[target].split("\,") :
+                print ("Depend is " + depend)
+                #print ("Self.done is " + self.done[depend])
+                #print ("Dependency of dependency is" + self.depend[depend])
+                if not (depend in self.done or (depend == "none")) :  
+                   print ("Checking depends of target" + target)       
+                   self.status = self.check_sources_of_dest(target)
+                   if depend in self.fail :
+                       self.depend_fail[target] = 1
+                       self.depend_done[target] = 0
+                   elif not (self.status == "PASS") :
+                       self.depend_done[target] = 0
+                   
+            
+            #for source in self.sources[dest] :     
+            #   print ("src RT is" + source)
+            #    if not source in self.done :
+            #       self.test_done[target]  =0
+                   
+            if (self.depend_done[target] == 1) :
+                # Accumulate all he jobs to be run this iteration
+                print ("Adding job to run list" + target)
+                self.jobs_to_run.append(target)
+            elif (target in self.depend_fail) :
+                print ("Marking Target as Failing due to dependency Fail and will not run it")
+                # Not re-inserting the targret inot active list.
+            else :
+                # This cannot be run yet as dependencies are not done
+                print ("Target dependencies are not done - so keep in all_targets list")
+                self.all_targets.insert(0,target)
+                time.sleep(3)
+            self.run_jobs()
+            
+   def run_jobs(self) :
+        #self.process = dict()
+        self.process = []
+        print ("Jobs to run "+str(self.jobs_to_run))
+        while (self.jobs_to_run) :
+              job = self.jobs_to_run.pop()
+              print ("Command is"+self.cmd[job])
+              cmdlist = self.cmd[job].split()
+              print ("cmdlist "+str(cmdlist))
+              #self.process[job] = subprocess.Popen(cmdlist)
+              self.process.append((job,subprocess.Popen(cmdlist)))
+              
+              #status = self.process[job].poll()
+              #print ("S="+str(status))
+            
+        while  self.process :
+              time.sleep(1)
+              (target,ps) = self.process.pop()
+              print ("Target running " + target)
+              status = ps.poll()
+              if (str(status) == "None") :
+                   print ("Still running "+target)
+                   self.process.insert(0,(target,ps))
+                  
+              elif (status == 0) :
+                   # Speculative complete - need to verify exit status
+              
+                   print ("Exited successfully " +target)
+                   self.done[target] = 1
+              else :
+                   print ("ERROR Status is "+str(status)+" for "+target)
+                   self.fail[target] = 1
+                   
+                   
+       
+       
 
 
 cmdline_args_length = len(sys.argv)
@@ -42,15 +199,23 @@ if (cmdline_args_length == 1) :
 elif (cmdline_args_length == 2) :
     target = sys.argv[1]
 
-fdf
 
 print (target)
 bake = baker()
 bake.parse_cmd(target)
+print ("Hello World ")
 
-bakefile = "Bakefile.py"
-if os.path.exists(bakefile) and os.path.getsize(bakefile) > 0:
+Bakefile = "/Users/us/eclipse-workspace/bake/code/Bakefile.py"
+if os.path.exists(Bakefile) and os.path.getsize(Bakefile) > 0:
    sys.path.append(path.dirname(path.dirname(path.abspath(__file__))))
-   import Bakefile 
+   import Bakefile
+      
 else :
    print ("Missing Bakefile or Empty Bakefile")
+bread = Bakefile.bread(bake)
+bread.run()
+bake.find_lonely_children()
+bake.find_lonely_parents()
+bake.run_tree()
+print ("Bye")
+
